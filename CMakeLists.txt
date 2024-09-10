@@ -17,7 +17,7 @@ target_include_directories(hack
 
 find_package(Python3 COMPONENTS Interpreter Development REQUIRED)
 
-target_link_libraries(hack INTERFACE
+target_link_libraries(hack
   Python3::Python
   Python3::Module
 )

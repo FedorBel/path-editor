@@ -64,3 +64,40 @@ PyMODINIT_FUNC PyInit_fooMod(void)
 {
     return PyModule_Create(&fooMod);
 }
+
+using namespace motion_planning::collision_checker;
+// update drivable area with objects
+
+cv::Mat drivable_area_with_objects = [&]()
+{
+    nami::Grid grid_map(*occupancy_grid_);
+    autoware_perception_msgs::msg::DynamicObjectArray static_objects;
+    for (const auto &obj : object_ptr_->objects)
+    {
+        if (
+            /*obj.shape.type == autoware_perception_msgs::msg::Shape::BOUNDING_BOX &&*/
+            obj.state.twist_covariance.twist.linear.x < 1.0)
+        {
+            static_objects.objects.push_back(obj);
+        }
+    }
+    grid_map.addObjects(static_objects.objects, 0.5, 0.2);
+    cv::Mat drivable_area = transposeCVData(grid_map.data());
+    drivable_area.forEach<unsigned char>(
+        [&](unsigned char &value, const int *position) -> void
+        { value = (value > 0) ? 0 : 255; });
+    return drivable_area;
+}();
+cv::Mat clearance_map_with_objects = getClearanceMap(drivable_area_with_objects);
+auto map_with_obst_ptr =
+    std::make_unique<Map>(*occupancy_grid_, drivable_area_with_objects, clearance_map_with_objects);
+auto cc_map_with_obst_ptr = std::make_unique<GridMapCollisionChecker>(*map_with_obst_ptr, ego_params_);
+for (const auto &state : reference_states)
+{
+    motion_planning::collision_checker::State state_cc = {state.x, state.y, state.z};
+    if (!cc_map_with_obst_ptr->isSingleStateCollisionFreeImproved(state_cc))
+    {
+        RCLCPP_ERROR(get_logger(), "GRID MAP COLLISION");
+        break;
+    }
+}
